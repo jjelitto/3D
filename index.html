@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <title>3D Kartenseite - Mapterhorn & Swisstopo Integration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- MapLibre GL JS v5 -->
+    <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css" rel="stylesheet" />
+    
+    <!-- Sortable.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        :root {
+            --bg-glass: rgba(15, 23, 42, 0.88);
+            --border-glass: rgba(255, 255, 255, 0.15);
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --accent: #10b981;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --panel-width: 360px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0f172a;
+            color: var(--text);
+            position: fixed;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0f172a;
+        }
+
+        .sidebar {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            bottom: 16px;
+            width: var(--panel-width);
+            max-width: calc(100vw - 32px);
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(calc(-100% - 24px));
+        }
+
+        .sidebar-toggle {
+            position: absolute;
+            top: 16px;
+            left: calc(var(--panel-width) + 28px);
+            z-index: 10;
+            background: var(--bg-glass);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-glass);
+            color: var(--text);
+            padding: 10px 14px;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+            transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+        }
+
+        .sidebar-toggle:hover {
+            background: rgba(30, 41, 59, 0.95);
+        }
+
+        .sidebar.collapsed + .sidebar-toggle {
+            left: 16px;
+        }
+
+        .sidebar-header {
+            padding: 18px 20px;
+            border-bottom: 1px solid var(--border-glass);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar-header h1 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #ffffff;
+        }
+
+        .sidebar-content {
+            padding: 16px 20px;
+            overflow-y: auto;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .sidebar-content::-webkit-scrollbar {
+            width: 5px;
+        }
+        .sidebar-content::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 3px;
+        }
+
+        .section-title {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .layer-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-glass);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 8px;
+            transition: background 0.2s, border-color 0.2s;
+            user-select: none;
+        }
+
+        .layer-card.sortable-ghost {
+            opacity: 0.4;
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px dashed var(--primary);
+        }
+
+        .layer-card.sortable-drag {
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            background: rgba(30, 41, 59, 0.95);
+        }
+
+        .layer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .layer-title-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .drag-handle {
+            cursor: grab;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            padding: 2px;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .layer-title-group label {
+            font-weight: 600;
+            font-size: 0.88rem;
+            cursor: pointer;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #334155;
+            transition: .3s;
+            border-radius: 22px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(16px);
+        }
+
+        .opacity-control {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .opacity-control span {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            min-width: 65px;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]:focus {
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 3px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: var(--text);
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        }
+
+        .upload-box {
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.02);
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .upload-box:hover {
+            border-color: var(--primary);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .upload-box p {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .upload-box span {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        #gpx-file-input {
+            display: none;
+        }
+
+        .gpx-track-item {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .gpx-track-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .gpx-track-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            word-break: break-all;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+        }
+
+        .btn-icon:hover {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .controls-3d {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border-glass);
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .maplibregl-ctrl-group {
+            background: var(--bg-glass) !important;
+            backdrop-filter: blur(12px) !important;
+            border: 1px solid var(--border-glass) !important;
+            border-radius: 12px !important;
+            overflow: hidden;
+        }
+
+        .maplibregl-ctrl-group button {
+            border-bottom: 1px solid var(--border-glass) !important;
+        }
+
+        .maplibregl-ctrl-group button:last-child {
+            border-bottom: none !important;
+        }
+
+        .maplibregl-ctrl-icon {
+            filter: invert(1);
+        }
+
+        @media (max-width: 640px) {
+            .sidebar {
+                top: auto;
+                left: 10px;
+                right: 10px;
+                bottom: 10px;
+                width: auto;
+                max-width: none;
+                max-height: 50vh;
+                border-radius: 18px;
+                transform: translateY(0);
+            }
+
+            .sidebar.collapsed {
+                transform: translateY(calc(100% + 20px));
+            }
+
+            .sidebar-toggle {
+                top: auto;
+                bottom: 20px;
+                left: 16px;
+                border-radius: 30px;
+                padding: 12px 18px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+            }
+
+            .sidebar.collapsed + .sidebar-toggle {
+                left: 16px;
+                bottom: 20px;
+            }
+
+            .maplibregl-ctrl-top-right {
+                top: 10px !important;
+                right: 10px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1><i data-lucide="mountain-snow" style="color: #3b82f6;"></i> Mapterhorn 3D Map</h1>
+        </div>
+
+        <div class="sidebar-content">
+
+            <div>
+                <div class="section-title"><i data-lucide="box"></i> 3D Terrain & Relief</div>
+                <div class="layer-card">
+                    <div class="layer-header">
+                        <div class="layer-title-group">
+                            <label for="toggle-terrain">3D Relief (Mapterhorn DEM)</label>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-terrain" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="opacity-control">
+                        <span>Überhöhung: <strong id="val-exaggeration">1.0x</strong></span>
+                        <input type="range" id="slider-exaggeration" min="0" max="3" step="0.1" value="1.0">
+                    </div>
+                </div>
+
+                <div class="controls-3d">
+                    <button class="btn-secondary" id="btn-reset-view"><i data-lucide="compass"></i> Nord / Reset</button>
+                    <button class="btn-secondary" id="btn-toggle-pitch"><i data-lucide="eye"></i> 2D / 3D Ansicht</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title"><i data-lucide="layers"></i> Karten-Ebenen (Reihenfolge ziehbar)</div>
+                
+                <div id="layer-list">
+
+                    <div class="layer-card" data-layer-id="osm">
+                        <div class="layer-header">
+                            <div class="layer-title-group">
+                                <span class="drag-handle"><i data-lucide="grip-vertical"></i></span>
+                                <label for="toggle-osm">OSM Outdoor / Topo</label>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-osm" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="opacity-control">
+                            <span>Deckkraft: <strong id="val-osm">100%</strong></span>
+                            <input type="range" id="opacity-osm" min="0" max="1" step="0.05" value="1.0">
+                        </div>
+                    </div>
+
+                    <div class="layer-card" data-layer-id="pixelkarte">
+                        <div class="layer-header">
+                            <div class="layer-title-group">
+                                <span class="drag-handle"><i data-lucide="grip-vertical"></i></span>
+                                <label for="toggle-pixelkarte">Landeskarte (map.geo)</label>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-pixelkarte">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="opacity-control">
+                            <span>Deckkraft: <strong id="val-pixelkarte">80%</strong></span>
+                            <input type="range" id="opacity-pixelkarte" min="0" max="1" step="0.05" value="0.8">
+                        </div>
+                    </div>
+
+                    <div class="layer-card" data-layer-id="swissimage">
+                        <div class="layer-header">
+                            <div class="layer-title-group">
+                                <span class="drag-handle"><i data-lucide="grip-vertical"></i></span>
+                                <label for="toggle-swissimage">Luftbild (SWISSIMAGE)</label>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-swissimage">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="opacity-control">
+                            <span>Deckkraft: <strong id="val-swissimage">80%</strong></span>
+                            <input type="range" id="opacity-swissimage" min="0" max="1" step="0.05" value="0.8">
+                        </div>
+                    </div>
+
+                    <div class="layer-card" data-layer-id="swisstlm">
+                        <div class="layer-header">
+                            <div class="layer-title-group">
+                                <span class="drag-handle"><i data-lucide="grip-vertical"></i></span>
+                                <label for="toggle-swisstlm">Swiss TLM Farbig</label>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-swisstlm">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="opacity-control">
+                            <span>Deckkraft: <strong id="val-swisstlm">80%</strong></span>
+                            <input type="range" id="opacity-swisstlm" min="0" max="1" step="0.05" value="0.8">
+                        </div>
+                    </div>
+
+                    <div class="layer-card" data-layer-id="hangneigung">
+                        <div class="layer-header">
+                            <div class="layer-title-group">
+                                <span class="drag-handle"><i data-lucide="grip-vertical"></i></span>
+                                <label for="toggle-hangneigung" style="color: #f87171;">Hangneigung (> 30°)</label>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-hangneigung">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="opacity-control">
+                            <span>Deckkraft: <strong id="val-hangneigung">70%</strong></span>
+                            <input type="range" id="opacity-hangneigung" min="0" max="1" step="0.05" value="0.7">
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title"><i data-lucide="route"></i> GPX Track Upload</div>
+                
+                <div class="upload-box" id="drop-zone" onclick="document.getElementById('gpx-file-input').click();">
+                    <i data-lucide="upload-cloud" style="width: 26px; height: 26px; color:#3b82f6;"></i>
+                    <p><span>GPX Datei hierher ziehen</span> oder klicken</p>
+                    <input type="file" id="gpx-file-input" accept=".gpx" multiple>
+                </div>
+
+                <div id="gpx-list"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <button class="sidebar-toggle" id="sidebar-toggle-btn">
+        <i data-lucide="panel-left-close" id="sidebar-toggle-icon"></i>
+        <span>Steuerung</span>
+    </button>
+
+    <script>
+        lucide.createIcons();
+
+        // MapLibre GL v5 Setup
+        const map = new maplibregl.Map({
+            container: 'map',
+            zoom: 12.81,
+            center: [8.05707, 46.45402],
+            pitch: 65,
+            bearing: -100.5,
+            maxPitch: 85,
+            pitchWithRotate: true,
+            touchPitch: true,
+            style: {
+                version: 8,
+                sources: {
+                    'mapterhorn-dem': {
+                        type: 'raster-dem',
+                        url: 'https://tiles.mapterhorn.com/tilejson.json',
+                        tileSize: 256
+                    },
+                    'osm': {
+                        type: 'raster',
+                        tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png'],
+                        tileSize: 256,
+                        attribution: '&copy; OpenTopoMap',
+                        maxzoom: 17
+                    },
+                    'swissimage': {
+                        type: 'raster',
+                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg'],
+                        tileSize: 256,
+                        attribution: '&copy; swisstopo',
+                        maxzoom: 20
+                    },
+                    'pixelkarte': {
+                        type: 'raster',
+                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg'],
+                        tileSize: 256,
+                        attribution: '&copy; swisstopo',
+                        maxzoom: 19
+                    },
+                    'swisstlm': {
+                        type: 'raster',
+                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-karte-farbe/default/current/3857/{z}/{x}/{y}.png'],
+                        tileSize: 256,
+                        attribution: '&copy; swisstopo',
+                        maxzoom: 19
+                    },
+                    'hangneigung': {
+                        type: 'raster',
+                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30/default/current/3857/{z}/{x}/{y}.png'],
+                        tileSize: 256,
+                        attribution: '&copy; swisstopo',
+                        maxzoom: 18
+                    }
+                },
+                layers: [
+                    {
+                        id: 'osm',
+                        type: 'raster',
+                        source: 'osm',
+                        layout: { visibility: 'visible' },
+                        paint: { 'raster-opacity': 1.0 }
+                    },
+                    {
+                        id: 'pixelkarte',
+                        type: 'raster',
+                        source: 'pixelkarte',
+                        layout: { visibility: 'none' },
+                        paint: { 'raster-opacity': 0.8 }
+                    },
+                    {
+                        id: 'swissimage',
+                        type: 'raster',
+                        source: 'swissimage',
+                        layout: { visibility: 'none' },
+                        paint: { 'raster-opacity': 0.8 }
+                    },
+                    {
+                        id: 'swisstlm',
+                        type: 'raster',
+                        source: 'swisstlm',
+                        layout: { visibility: 'none' },
+                        paint: { 'raster-opacity': 0.8 }
+                    },
+                    {
+                        id: 'hangneigung',
+                        type: 'raster',
+                        source: 'hangneigung',
+                        layout: { visibility: 'none' },
+                        paint: { 'raster-opacity': 0.7 }
+                    },
+                    {
+                        id: 'mapterhorn-hills',
+                        type: 'hillshade',
+                        source: 'mapterhorn-dem',
+                        paint: {
+                            'hillshade-shadow-color': '#0f172a',
+                            'hillshade-highlight-color': '#ffffff',
+                            'hillshade-exaggeration': 0.6
+                        }
+                    }
+                ],
+                terrain: {
+                    source: 'mapterhorn-dem',
+                    exaggeration: 1.0
+                }
+            }
+        });
+
+        map.addControl(new maplibregl.NavigationControl({
+            visualizePitch: true,
+            showZoom: true,
+            showCompass: true
+        }), 'top-right');
+
+        map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+        map.on('load', () => {
+            map.resize();
+            updateLayerOrder();
+        });
+
+        // Sidebar Control
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+        const sidebarToggleIcon = document.getElementById('sidebar-toggle-icon');
+
+        if (window.innerWidth <= 640) {
+            sidebar.classList.add('collapsed');
+            sidebarToggleIcon.setAttribute('data-lucide', 'panel-left-open');
+        }
+
+        sidebarToggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            sidebarToggleIcon.setAttribute('data-lucide', isCollapsed ? 'panel-left-open' : 'panel-left-close');
+            lucide.createIcons();
+            setTimeout(() => map.resize(), 300);
+        });
+
+        const layerControls = [
+            { id: 'osm', toggle: 'toggle-osm', slider: 'opacity-osm', val: 'val-osm' },
+            { id: 'pixelkarte', toggle: 'toggle-pixelkarte', slider: 'opacity-pixelkarte', val: 'val-pixelkarte' },
+            { id: 'swissimage', toggle: 'toggle-swissimage', slider: 'opacity-swissimage', val: 'val-swissimage' },
+            { id: 'swisstlm', toggle: 'toggle-swisstlm', slider: 'opacity-swisstlm', val: 'val-swisstlm' },
+            { id: 'hangneigung', toggle: 'toggle-hangneigung', slider: 'opacity-hangneigung', val: 'val-hangneigung' }
+        ];
+
+        layerControls.forEach(item => {
+            const toggleEl = document.getElementById(item.toggle);
+            const sliderEl = document.getElementById(item.slider);
+            const valEl = document.getElementById(item.val);
+
+            toggleEl.addEventListener('change', (e) => {
+                const vis = e.target.checked ? 'visible' : 'none';
+                if (map.getLayer(item.id)) {
+                    map.setLayoutProperty(item.id, 'visibility', vis);
+                }
+            });
+
+            sliderEl.addEventListener('input', (e) => {
+                const opacity = parseFloat(e.target.value);
+                valEl.innerText = Math.round(opacity * 100) + '%';
+                if (map.getLayer(item.id)) {
+                    map.setPaintProperty(item.id, 'raster-opacity', opacity);
+                }
+            });
+        });
+
+        // Drag & Drop Sorting
+        const layerListEl = document.getElementById('layer-list');
+        Sortable.create(layerListEl, {
+            handle: '.drag-handle',
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            dragClass: 'sortable-drag',
+            onEnd: function () {
+                updateLayerOrder();
+            }
+        });
+
+        function updateLayerOrder() {
+            const layerCards = Array.from(layerListEl.querySelectorAll('.layer-card'));
+            const orderedIds = layerCards.map(card => card.getAttribute('data-layer-id')).reverse();
+
+            orderedIds.forEach(id => {
+                if (map.getLayer(id)) {
+                    map.moveLayer(id);
+                }
+            });
+
+            if (map.getLayer('mapterhorn-hills')) {
+                map.moveLayer('mapterhorn-hills');
+            }
+        }
+
+        // 3D Terrain
+        const toggleTerrain = document.getElementById('toggle-terrain');
+        const sliderExaggeration = document.getElementById('slider-exaggeration');
+        const valExaggeration = document.getElementById('val-exaggeration');
+
+        toggleTerrain.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                map.setTerrain({ source: 'mapterhorn-dem', exaggeration: parseFloat(sliderExaggeration.value) });
+            } else {
+                map.setTerrain(null);
+            }
+        });
+
+        sliderExaggeration.addEventListener('input', (e) => {
+            const exag = parseFloat(e.target.value);
+            valExaggeration.innerText = exag.toFixed(1) + 'x';
+            if (toggleTerrain.checked) {
+                map.setTerrain({ source: 'mapterhorn-dem', exaggeration: exag });
+            }
+        });
+
+        document.getElementById('btn-reset-view').addEventListener('click', () => {
+            map.easeTo({ bearing: 0, pitch: 0 });
+        });
+
+        document.getElementById('btn-toggle-pitch').addEventListener('click', () => {
+            const currentPitch = map.getPitch();
+            map.easeTo({ pitch: currentPitch > 20 ? 0 : 65 });
+        });
+
+        // GPX Upload
+        function parseGPX(xmlText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+            const coordinates = [];
+
+            const points = xmlDoc.querySelectorAll("trkpt, rtept");
+            points.forEach(pt => {
+                const lat = parseFloat(pt.getAttribute("lat"));
+                const lon = parseFloat(pt.getAttribute("lon"));
+                const eleEl = pt.querySelector("ele");
+                const ele = eleEl ? parseFloat(eleEl.textContent) : 0;
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    coordinates.push([lon, lat, ele]);
+                }
+            });
+
+            const nameEl = xmlDoc.querySelector("trk > name, rte > name, gpx > name");
+            const name = nameEl ? nameEl.textContent.trim() : "GPX Track";
+
+            return {
+                type: "Feature",
+                properties: { name: name },
+                geometry: {
+                    type: "LineString",
+                    coordinates: coordinates
+                }
+            };
+        }
+
+        const gpxFileInput = document.getElementById('gpx-file-input');
+        const dropZone = document.getElementById('drop-zone');
+        const gpxList = document.getElementById('gpx-list');
+        let trackCount = 0;
+
+        function handleGPXFiles(files) {
+            Array.from(files).forEach(file => {
+                if (!file.name.toLowerCase().endsWith('.gpx')) return;
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const geojson = parseGPX(e.target.result);
+                    if (geojson.geometry.coordinates.length === 0) {
+                        alert("Keine gültigen Koordinaten in GPX-Datei gefunden.");
+                        return;
+                    }
+                    addGPXToMap(geojson, file.name);
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        gpxFileInput.addEventListener('change', (e) => handleGPXFiles(e.target.files));
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#3b82f6';
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            if (e.dataTransfer.files.length > 0) {
+                handleGPXFiles(e.dataTransfer.files);
+            }
+        });
+
+        function addGPXToMap(geojson, fileName) {
+            trackCount++;
+            const sourceId = `gpx-source-${trackCount}`;
+            const layerId = `gpx-layer-${trackCount}`;
+            const defaultColor = '#ef4444';
+
+            map.addSource(sourceId, {
+                type: 'geojson',
+                data: geojson
+            });
+
+            map.addLayer({
+                id: layerId,
+                type: 'line',
+                source: sourceId,
+                layout: {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                paint: {
+                    'line-color': defaultColor,
+                    'line-width': 4,
+                    'line-opacity': 0.9
+                }
+            });
+
+            const coordinates = geojson.geometry.coordinates;
+            const bounds = coordinates.reduce((bounds, coord) => {
+                return bounds.extend([coord[0], coord[1]]);
+            }, new maplibregl.LngLatBounds(coordinates[0], coordinates[0]));
+
+            map.fitBounds(bounds, { padding: 60, maxZoom: 15 });
+
+            const trackItem = document.createElement('div');
+            trackItem.className = 'gpx-track-item';
+            trackItem.id = `gpx-ui-${trackCount}`;
+            trackItem.innerHTML = `
+                <div class="gpx-track-header">
+                    <div class="gpx-track-name">
+                        <i data-lucide="map-pin" style="color: ${defaultColor}; width:16px;"></i>
+                        <span>${geojson.properties.name || fileName}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="color" id="color-${trackCount}" value="${defaultColor}" style="border:none; width:20px; height:20px; cursor:pointer; background:none;">
+                        <button class="btn-icon" id="del-${trackCount}" title="Entfernen">
+                            <i data-lucide="trash-2" style="width:16px; height:16px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="opacity-control">
+                    <span>Deckkraft: <strong id="val-gpx-${trackCount}">90%</strong></span>
+                    <input type="range" id="opacity-gpx-${trackCount}" min="0" max="1" step="0.05" value="0.9">
+                </div>
+            `;
+
+            gpxList.appendChild(trackItem);
+            lucide.createIcons();
+
+            document.getElementById(`color-${trackCount}`).addEventListener('input', (e) => {
+                const color = e.target.value;
+                if (map.getLayer(layerId)) {
+                    map.setPaintProperty(layerId, 'line-color', color);
+                }
+            });
+
+            document.getElementById(`opacity-gpx-${trackCount}`).addEventListener('input', (e) => {
+                const opacity = parseFloat(e.target.value);
+                document.getElementById(`val-gpx-${trackCount}`).innerText = Math.round(opacity * 100) + '%';
+                if (map.getLayer(layerId)) {
+                    map.setPaintProperty(layerId, 'line-opacity', opacity);
+                }
+            });
+
+            document.getElementById(`del-${trackCount}`).addEventListener('click', () => {
+                if (map.getLayer(layerId)) map.removeLayer(layerId);
+                if (map.getSource(sourceId)) map.removeSource(sourceId);
+                trackItem.remove();
+            });
+        }
+    </script>
+</body>
+</html>
