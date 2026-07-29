@@ -44,6 +44,87 @@
             position: fixed;
         }
 
+        /* PASSWORT-OVERLAY STYLES */
+        #auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .auth-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            padding: 32px;
+            width: 100%;
+            max-width: 380px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+
+        .auth-card h2 {
+            font-size: 1.3rem;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }
+
+        .auth-card p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border-glass);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .auth-input:focus {
+            border-color: var(--primary);
+        }
+
+        .auth-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .auth-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .auth-error {
+            color: #ef4444;
+            font-size: 0.8rem;
+            margin-top: 10px;
+            display: none;
+        }
+
         #map {
             position: absolute;
             top: 0;
@@ -390,6 +471,17 @@
             background: rgba(255, 255, 255, 0.15);
         }
 
+        .btn-logout {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            margin-top: 10px;
+        }
+
+        .btn-logout:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
         .maplibregl-ctrl-group {
             background: var(--bg-glass) !important;
             backdrop-filter: blur(12px) !important;
@@ -449,6 +541,18 @@
     </style>
 </head>
 <body>
+
+    <!-- PASSWORT-ABFRAGE OVERLAY -->
+    <div id="auth-overlay">
+        <div class="auth-card">
+            <i data-lucide="lock" style="width: 36px; height: 36px; color: #3b82f6; margin-bottom: 12px;"></i>
+            <h2>Geschützte Karte</h2>
+            <p>Bitte gib das Passwort ein, um Zugriff auf die 3D-Karte zu erhalten.</p>
+            <input type="password" id="auth-password" class="auth-input" placeholder="Passwort eingeben..." autofocus>
+            <button id="auth-submit" class="auth-btn">Anmelden</button>
+            <div id="auth-error" class="auth-error">Falsches Passwort! Bitte erneut versuchen.</div>
+        </div>
+    </div>
 
     <div id="map"></div>
 
@@ -588,6 +692,8 @@
                 <div id="gpx-list"></div>
             </div>
 
+            <button class="btn-secondary btn-logout" id="btn-logout"><i data-lucide="log-out"></i> Abmelden / Sperren</button>
+
         </div>
     </div>
 
@@ -599,232 +705,287 @@
     <script>
         lucide.createIcons();
 
-        // MapLibre GL v5 Setup
-        const map = new maplibregl.Map({
-            container: 'map',
-            zoom: 12.81,
-            center: [8.05707, 46.45402],
-            pitch: 65,
-            bearing: -100.5,
-            maxPitch: 85,
-            pitchWithRotate: true,
-            touchPitch: true,
-            style: {
-                version: 8,
-                sources: {
-                    'mapterhorn-dem': {
-                        type: 'raster-dem',
-                        url: 'https://tiles.mapterhorn.com/tilejson.json',
-                        tileSize: 256
-                    },
-                    'osm': {
-                        type: 'raster',
-                        tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png'],
-                        tileSize: 256,
-                        attribution: '&copy; OpenTopoMap',
-                        maxzoom: 17
-                    },
-                    'swissimage': {
-                        type: 'raster',
-                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg'],
-                        tileSize: 256,
-                        attribution: '&copy; swisstopo',
-                        maxzoom: 20
-                    },
-                    'pixelkarte': {
-                        type: 'raster',
-                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg'],
-                        tileSize: 256,
-                        attribution: '&copy; swisstopo',
-                        maxzoom: 19
-                    },
-                    'swisstlm': {
-                        type: 'raster',
-                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-karte-farbe/default/current/3857/{z}/{x}/{y}.png'],
-                        tileSize: 256,
-                        attribution: '&copy; swisstopo',
-                        maxzoom: 19
-                    },
-                    'hangneigung': {
-                        type: 'raster',
-                        tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30/default/current/3857/{z}/{x}/{y}.png'],
-                        tileSize: 256,
-                        attribution: '&copy; swisstopo',
-                        maxzoom: 18
-                    }
-                },
-                layers: [
-                    {
-                        id: 'osm',
-                        type: 'raster',
-                        source: 'osm',
-                        layout: { visibility: 'visible' },
-                        paint: { 'raster-opacity': 1.0 }
-                    },
-                    {
-                        id: 'pixelkarte',
-                        type: 'raster',
-                        source: 'pixelkarte',
-                        layout: { visibility: 'none' },
-                        paint: { 'raster-opacity': 0.8 }
-                    },
-                    {
-                        id: 'swissimage',
-                        type: 'raster',
-                        source: 'swissimage',
-                        layout: { visibility: 'none' },
-                        paint: { 'raster-opacity': 0.8 }
-                    },
-                    {
-                        id: 'swisstlm',
-                        type: 'raster',
-                        source: 'swisstlm',
-                        layout: { visibility: 'none' },
-                        paint: { 'raster-opacity': 0.8 }
-                    },
-                    {
-                        id: 'hangneigung',
-                        type: 'raster',
-                        source: 'hangneigung',
-                        layout: { visibility: 'none' },
-                        paint: { 'raster-opacity': 0.7 }
-                    },
-                    {
-                        id: 'mapterhorn-hills',
-                        type: 'hillshade',
-                        source: 'mapterhorn-dem',
-                        paint: {
-                            'hillshade-shadow-color': '#0f172a',
-                            'hillshade-highlight-color': '#ffffff',
-                            'hillshade-exaggeration': 0.6
-                        }
-                    }
-                ],
-                terrain: {
-                    source: 'mapterhorn-dem',
-                    exaggeration: 1.0
-                }
+        // LOGIK FÜR PASSWORT-SPERRE
+        const AUTH_KEY = 'mapterhorn_authenticated';
+        const TARGET_PASS = 'mapterhorn2026';
+
+        const authOverlay = document.getElementById('auth-overlay');
+        const authPasswordInput = document.getElementById('auth-password');
+        const authSubmitBtn = document.getElementById('auth-submit');
+        const authErrorMsg = document.getElementById('auth-error');
+        const btnLogout = document.getElementById('btn-logout');
+
+        function checkAuth() {
+            if (localStorage.getItem(AUTH_KEY) === 'true') {
+                authOverlay.style.display = 'none';
+                initMap(); // Karte erst nach erfolgreichem Auth laden!
+            } else {
+                authOverlay.style.display = 'flex';
             }
-        });
-
-        map.addControl(new maplibregl.NavigationControl({
-            visualizePitch: true,
-            showZoom: true,
-            showCompass: true
-        }), 'top-right');
-
-        map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
-
-        map.on('load', () => {
-            map.resize();
-            updateLayerOrder();
-        });
-
-        // Sidebar Control
-        const sidebar = document.getElementById('sidebar');
-        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
-        const sidebarToggleIcon = document.getElementById('sidebar-toggle-icon');
-
-        if (window.innerWidth <= 640) {
-            sidebar.classList.add('collapsed');
-            sidebarToggleIcon.setAttribute('data-lucide', 'panel-left-open');
         }
 
-        sidebarToggleBtn.addEventListener('click', () => {
-            sidebar.classList.toggle('collapsed');
-            const isCollapsed = sidebar.classList.contains('collapsed');
-            sidebarToggleIcon.setAttribute('data-lucide', isCollapsed ? 'panel-left-open' : 'panel-left-close');
-            lucide.createIcons();
-            setTimeout(() => map.resize(), 300);
-        });
-
-        const layerControls = [
-            { id: 'osm', toggle: 'toggle-osm', slider: 'opacity-osm', val: 'val-osm' },
-            { id: 'pixelkarte', toggle: 'toggle-pixelkarte', slider: 'opacity-pixelkarte', val: 'val-pixelkarte' },
-            { id: 'swissimage', toggle: 'toggle-swissimage', slider: 'opacity-swissimage', val: 'val-swissimage' },
-            { id: 'swisstlm', toggle: 'toggle-swisstlm', slider: 'opacity-swisstlm', val: 'val-swisstlm' },
-            { id: 'hangneigung', toggle: 'toggle-hangneigung', slider: 'opacity-hangneigung', val: 'val-hangneigung' }
-        ];
-
-        layerControls.forEach(item => {
-            const toggleEl = document.getElementById(item.toggle);
-            const sliderEl = document.getElementById(item.slider);
-            const valEl = document.getElementById(item.val);
-
-            toggleEl.addEventListener('change', (e) => {
-                const vis = e.target.checked ? 'visible' : 'none';
-                if (map.getLayer(item.id)) {
-                    map.setLayoutProperty(item.id, 'visibility', vis);
-                }
-            });
-
-            sliderEl.addEventListener('input', (e) => {
-                const opacity = parseFloat(e.target.value);
-                valEl.innerText = Math.round(opacity * 100) + '%';
-                if (map.getLayer(item.id)) {
-                    map.setPaintProperty(item.id, 'raster-opacity', opacity);
-                }
-            });
-        });
-
-        // Drag & Drop Sorting
-        const layerListEl = document.getElementById('layer-list');
-        Sortable.create(layerListEl, {
-            handle: '.drag-handle',
-            animation: 150,
-            ghostClass: 'sortable-ghost',
-            dragClass: 'sortable-drag',
-            onEnd: function () {
-                updateLayerOrder();
+        function validatePassword() {
+            const entered = authPasswordInput.value;
+            if (entered === TARGET_PASS) {
+                localStorage.setItem(AUTH_KEY, 'true');
+                authOverlay.style.display = 'none';
+                authErrorMsg.style.display = 'none';
+                initMap();
+            } else {
+                authErrorMsg.style.display = 'block';
+                authPasswordInput.value = '';
             }
+        }
+
+        authSubmitBtn.addEventListener('click', validatePassword);
+        authPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validatePassword();
         });
+
+        btnLogout.addEventListener('click', () => {
+            localStorage.removeItem(AUTH_KEY);
+            location.reload();
+        });
+
+        // KARTEN-INITIALISIERUNG
+        let map;
+        let isMapInitialized = false;
+
+        function initMap() {
+            if (isMapInitialized) return;
+            isMapInitialized = true;
+
+            map = new maplibregl.Map({
+                container: 'map',
+                zoom: 12.81,
+                center: [8.05707, 46.45402],
+                pitch: 65,
+                bearing: -100.5,
+                maxPitch: 85,
+                pitchWithRotate: true,
+                touchPitch: true,
+                style: {
+                    version: 8,
+                    sources: {
+                        'mapterhorn-dem': {
+                            type: 'raster-dem',
+                            url: 'https://tiles.mapterhorn.com/tilejson.json',
+                            tileSize: 256
+                        },
+                        'osm': {
+                            type: 'raster',
+                            tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png'],
+                            tileSize: 256,
+                            attribution: '&copy; OpenTopoMap',
+                            maxzoom: 17
+                        },
+                        'swissimage': {
+                            type: 'raster',
+                            tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg'],
+                            tileSize: 256,
+                            attribution: '&copy; swisstopo',
+                            maxzoom: 20
+                        },
+                        'pixelkarte': {
+                            type: 'raster',
+                            tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg'],
+                            tileSize: 256,
+                            attribution: '&copy; swisstopo',
+                            maxzoom: 19
+                        },
+                        'swisstlm': {
+                            type: 'raster',
+                            tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-karte-farbe/default/current/3857/{z}/{x}/{y}.png'],
+                            tileSize: 256,
+                            attribution: '&copy; swisstopo',
+                            maxzoom: 19
+                        },
+                        'hangneigung': {
+                            type: 'raster',
+                            tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30/default/current/3857/{z}/{x}/{y}.png'],
+                            tileSize: 256,
+                            attribution: '&copy; swisstopo',
+                            maxzoom: 18
+                        }
+                    },
+                    layers: [
+                        {
+                            id: 'osm',
+                            type: 'raster',
+                            source: 'osm',
+                            layout: { visibility: 'visible' },
+                            paint: { 'raster-opacity': 1.0 }
+                        },
+                        {
+                            id: 'pixelkarte',
+                            type: 'raster',
+                            source: 'pixelkarte',
+                            layout: { visibility: 'none' },
+                            paint: { 'raster-opacity': 0.8 }
+                        },
+                        {
+                            id: 'swissimage',
+                            type: 'raster',
+                            source: 'swissimage',
+                            layout: { visibility: 'none' },
+                            paint: { 'raster-opacity': 0.8 }
+                        },
+                        {
+                            id: 'swisstlm',
+                            type: 'raster',
+                            source: 'swisstlm',
+                            layout: { visibility: 'none' },
+                            paint: { 'raster-opacity': 0.8 }
+                        },
+                        {
+                            id: 'hangneigung',
+                            type: 'raster',
+                            source: 'hangneigung',
+                            layout: { visibility: 'none' },
+                            paint: { 'raster-opacity': 0.7 }
+                        },
+                        {
+                            id: 'mapterhorn-hills',
+                            type: 'hillshade',
+                            source: 'mapterhorn-dem',
+                            paint: {
+                                'hillshade-shadow-color': '#0f172a',
+                                'hillshade-highlight-color': '#ffffff',
+                                'hillshade-exaggeration': 0.6
+                            }
+                        }
+                    ],
+                    terrain: {
+                        source: 'mapterhorn-dem',
+                        exaggeration: 1.0
+                    }
+                }
+            });
+
+            map.addControl(new maplibregl.NavigationControl({
+                visualizePitch: true,
+                showZoom: true,
+                showCompass: true
+            }), 'top-right');
+
+            map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+            map.on('load', () => {
+                map.resize();
+                updateLayerOrder();
+            });
+
+            setupControls();
+        }
+
+        // CONTROL HANDLERS SETUP
+        function setupControls() {
+            const sidebar = document.getElementById('sidebar');
+            const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+            const sidebarToggleIcon = document.getElementById('sidebar-toggle-icon');
+
+            if (window.innerWidth <= 640) {
+                sidebar.classList.add('collapsed');
+                sidebarToggleIcon.setAttribute('data-lucide', 'panel-left-open');
+            }
+
+            sidebarToggleBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('collapsed');
+                const isCollapsed = sidebar.classList.contains('collapsed');
+                sidebarToggleIcon.setAttribute('data-lucide', isCollapsed ? 'panel-left-open' : 'panel-left-close');
+                lucide.createIcons();
+                setTimeout(() => map.resize(), 300);
+            });
+
+            const layerControls = [
+                { id: 'osm', toggle: 'toggle-osm', slider: 'opacity-osm', val: 'val-osm' },
+                { id: 'pixelkarte', toggle: 'toggle-pixelkarte', slider: 'opacity-pixelkarte', val: 'val-pixelkarte' },
+                { id: 'swissimage', toggle: 'toggle-swissimage', slider: 'opacity-swissimage', val: 'val-swissimage' },
+                { id: 'swisstlm', toggle: 'toggle-swisstlm', slider: 'opacity-swisstlm', val: 'val-swisstlm' },
+                { id: 'hangneigung', toggle: 'toggle-hangneigung', slider: 'opacity-hangneigung', val: 'val-hangneigung' }
+            ];
+
+            layerControls.forEach(item => {
+                const toggleEl = document.getElementById(item.toggle);
+                const sliderEl = document.getElementById(item.slider);
+                const valEl = document.getElementById(item.val);
+
+                toggleEl.addEventListener('change', (e) => {
+                    const vis = e.target.checked ? 'visible' : 'none';
+                    if (map.getLayer(item.id)) {
+                        map.setLayoutProperty(item.id, 'visibility', vis);
+                    }
+                });
+
+                sliderEl.addEventListener('input', (e) => {
+                    const opacity = parseFloat(e.target.value);
+                    valEl.innerText = Math.round(opacity * 100) + '%';
+                    if (map.getLayer(item.id)) {
+                        map.setPaintProperty(item.id, 'raster-opacity', opacity);
+                    }
+                });
+            });
+
+            const layerListEl = document.getElementById('layer-list');
+            Sortable.create(layerListEl, {
+                handle: '.drag-handle',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                onEnd: function () {
+                    updateLayerOrder();
+                }
+            });
+
+            const toggleTerrain = document.getElementById('toggle-terrain');
+            const sliderExaggeration = document.getElementById('slider-exaggeration');
+            const valExaggeration = document.getElementById('val-exaggeration');
+
+            toggleTerrain.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    map.setTerrain({ source: 'mapterhorn-dem', exaggeration: parseFloat(sliderExaggeration.value) });
+                } else {
+                    map.setTerrain(null);
+                }
+            });
+
+            sliderExaggeration.addEventListener('input', (e) => {
+                const exag = parseFloat(e.target.value);
+                valExaggeration.innerText = exag.toFixed(1) + 'x';
+                if (toggleTerrain.checked) {
+                    map.setTerrain({ source: 'mapterhorn-dem', exaggeration: exag });
+                }
+            });
+
+            document.getElementById('btn-reset-view').addEventListener('click', () => {
+                map.easeTo({ bearing: 0, pitch: 0 });
+            });
+
+            document.getElementById('btn-toggle-pitch').addEventListener('click', () => {
+                const currentPitch = map.getPitch();
+                map.easeTo({ pitch: currentPitch > 20 ? 0 : 65 });
+            });
+
+            setupGPX();
+        }
 
         function updateLayerOrder() {
+            const layerListEl = document.getElementById('layer-list');
             const layerCards = Array.from(layerListEl.querySelectorAll('.layer-card'));
             const orderedIds = layerCards.map(card => card.getAttribute('data-layer-id')).reverse();
 
             orderedIds.forEach(id => {
-                if (map.getLayer(id)) {
+                if (map && map.getLayer(id)) {
                     map.moveLayer(id);
                 }
             });
 
-            if (map.getLayer('mapterhorn-hills')) {
+            if (map && map.getLayer('mapterhorn-hills')) {
                 map.moveLayer('mapterhorn-hills');
             }
         }
 
-        // 3D Terrain
-        const toggleTerrain = document.getElementById('toggle-terrain');
-        const sliderExaggeration = document.getElementById('slider-exaggeration');
-        const valExaggeration = document.getElementById('val-exaggeration');
-
-        toggleTerrain.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                map.setTerrain({ source: 'mapterhorn-dem', exaggeration: parseFloat(sliderExaggeration.value) });
-            } else {
-                map.setTerrain(null);
-            }
-        });
-
-        sliderExaggeration.addEventListener('input', (e) => {
-            const exag = parseFloat(e.target.value);
-            valExaggeration.innerText = exag.toFixed(1) + 'x';
-            if (toggleTerrain.checked) {
-                map.setTerrain({ source: 'mapterhorn-dem', exaggeration: exag });
-            }
-        });
-
-        document.getElementById('btn-reset-view').addEventListener('click', () => {
-            map.easeTo({ bearing: 0, pitch: 0 });
-        });
-
-        document.getElementById('btn-toggle-pitch').addEventListener('click', () => {
-            const currentPitch = map.getPitch();
-            map.easeTo({ pitch: currentPitch > 20 ? 0 : 65 });
-        });
-
-        // GPX Upload
+        // GPX PARSER & SETUP
         function parseGPX(xmlText) {
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, "text/xml");
@@ -854,48 +1015,51 @@
             };
         }
 
-        const gpxFileInput = document.getElementById('gpx-file-input');
-        const dropZone = document.getElementById('drop-zone');
-        const gpxList = document.getElementById('gpx-list');
         let trackCount = 0;
 
-        function handleGPXFiles(files) {
-            Array.from(files).forEach(file => {
-                if (!file.name.toLowerCase().endsWith('.gpx')) return;
+        function setupGPX() {
+            const gpxFileInput = document.getElementById('gpx-file-input');
+            const dropZone = document.getElementById('drop-zone');
 
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const geojson = parseGPX(e.target.result);
-                    if (geojson.geometry.coordinates.length === 0) {
-                        alert("Keine gültigen Koordinaten in GPX-Datei gefunden.");
-                        return;
-                    }
-                    addGPXToMap(geojson, file.name);
-                };
-                reader.readAsText(file);
+            function handleGPXFiles(files) {
+                Array.from(files).forEach(file => {
+                    if (!file.name.toLowerCase().endsWith('.gpx')) return;
+
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const geojson = parseGPX(e.target.result);
+                        if (geojson.geometry.coordinates.length === 0) {
+                            alert("Keine gültigen Koordinaten in GPX-Datei gefunden.");
+                            return;
+                        }
+                        addGPXToMap(geojson, file.name);
+                    };
+                    reader.readAsText(file);
+                });
+            }
+
+            gpxFileInput.addEventListener('change', (e) => handleGPXFiles(e.target.files));
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = '#3b82f6';
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                if (e.dataTransfer.files.length > 0) {
+                    handleGPXFiles(e.dataTransfer.files);
+                }
             });
         }
 
-        gpxFileInput.addEventListener('change', (e) => handleGPXFiles(e.target.files));
-
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = '#3b82f6';
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-            if (e.dataTransfer.files.length > 0) {
-                handleGPXFiles(e.dataTransfer.files);
-            }
-        });
-
         function addGPXToMap(geojson, fileName) {
+            const gpxList = document.getElementById('gpx-list');
             trackCount++;
             const sourceId = `gpx-source-${trackCount}`;
             const layerId = `gpx-layer-${trackCount}`;
@@ -974,6 +1138,9 @@
                 trackItem.remove();
             });
         }
+
+        // Beim ersten Seitenaufruf Passwort-Status prüfen
+        checkAuth();
     </script>
 </body>
 </html>
